@@ -1,13 +1,10 @@
 import os
 import sys
 
-import django
 from django.conf import settings
+from django.http import HttpResponse
+from django.urls import path
 
-
-# use settings compatible with the installed Django version
-# v1.10+ requires MIDDLEWARE keyname
-# older versions require MIDDLEWARE_CLASSES keyname
 
 ROLLBAR_CONFIG = {
     'access_token': 'POST_SERVER_ITEM_ACCESS_TOKEN',
@@ -25,26 +22,13 @@ MIDDLEWARE_CONFIG = (
     'rollbar.contrib.django.middleware.RollbarNotifierMiddleware',
 )
 
-if django.VERSION >= (1, 10):
-    settings.configure(
-        DEBUG=True,
-        SECRET_KEY='thisisthesecretkey',
-        ROOT_URLCONF=__name__,
-        ROLLBAR = ROLLBAR_CONFIG,
-        MIDDLEWARE = MIDDLEWARE_CONFIG,
-    )
-else:
-    settings.configure(
-        DEBUG=True,
-        SECRET_KEY='thisisthesecretkey',
-        ROOT_URLCONF=__name__,
-        ROLLBAR = ROLLBAR_CONFIG,
-        MIDDLEWARE_CLASSES = MIDDLEWARE_CONFIG,
-    )
-
-from django.conf.urls import url
-from django.http import HttpResponse
-
+settings.configure(
+    DEBUG=True,
+    SECRET_KEY='thisisthesecretkey',
+    ROOT_URLCONF=__name__,
+    ROLLBAR = ROLLBAR_CONFIG,
+    MIDDLEWARE = MIDDLEWARE_CONFIG,
+)
 
 def index(request):
     return HttpResponse('Hello World')
@@ -55,8 +39,8 @@ def error(request):
 
 
 urlpatterns = (
-    url(r'^$', index),
-    url(r'^error$', error),
+    path('', index),
+    path('error', error),
 )
 
 if __name__ == "__main__":
