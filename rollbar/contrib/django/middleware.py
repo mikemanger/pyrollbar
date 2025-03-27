@@ -7,9 +7,7 @@ require modifying your settings.py file.
 The first option is to use
 'rollbar.contrib.django.middleware.RollbarNotifierMiddleware' which will
 report all exceptions to Rollbar including 404s. This middlware should be
-placed as the last item in your middleware list which is:
-    * MIDDLEWARE_CLASSES in Django 1.9 and earlier
-    * MIDDLEWARE in Django 1.10 and up
+placed as the last item in your `MIDDLEWARE` list.
 
 The other option is two use the two separate middlewares:
     * 'rollbar.contrib.django.middleware.RollbarNotifierMiddlewareExcluding404'
@@ -67,9 +65,7 @@ class CustomRollbarNotifierMiddleware(RollbarNotifierMiddleware):
         ''' May be defined.  Must return a dict or None. Use it to put some custom payload data on rollbar event. '''
         return
 
-4. add 'path.to.your.CustomRollbarNotifierMiddleware' in your settings.py to
-    a. MIDDLEWARE_CLASSES in Django 1.9 and earlier
-    b. MIDDLEWARE in Django 1.10 and up
+4. add 'path.to.your.CustomRollbarNotifierMiddleware' in your settings.py to MIDDLEWARE
 5. add a section like this in your settings.py:
 ROLLBAR = {
     'access_token': 'tokengoeshere',
@@ -223,15 +219,7 @@ class RollbarNotifierMiddleware(MiddlewareMixin):
         rollbar.init(access_token, environment, **kw)
 
         def hook(request, data):
-            try:
-                # try django 1.5 method for getting url_name
-                url_name = request.resolver_match.url_name
-            except:
-                # fallback to older method
-                try:
-                    url_name = resolve(request.path_info).url_name
-                except:
-                    url_name = None
+            url_name = request.resolver_match.url_name
 
             if url_name:
                 data['context'] = url_name
