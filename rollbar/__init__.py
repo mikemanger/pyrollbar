@@ -24,7 +24,7 @@ import requests
 from rollbar.lib import events, filters, dict_merge, transport, defaultJSONEncode
 
 
-__version__ = '1.1.0'
+__version__ = '1.3.0'
 __log_name__ = 'rollbar'
 log = logging.getLogger(__log_name__)
 
@@ -268,6 +268,7 @@ SETTINGS = {
     'environment': 'production',
     'exception_level_filters': [],
     'root': None,  # root path to your code
+    'host': None,  # custom hostname of the current host
     'branch': None,  # git branch name
     'code_version': None,
     # 'blocking', 'thread' (default), 'async', 'agent', 'tornado', 'gae', 'twisted', 'httpx' or 'thread_pool'
@@ -323,6 +324,7 @@ SETTINGS = {
     'request_pool_maxsize': None,
     'request_max_retries': None,
     'batch_transforms': False,
+    'custom_transforms': [],
 }
 
 _CURRENT_LAMBDA_CONTEXT = None
@@ -331,6 +333,7 @@ _LAST_RESPONSE_STATUS = None
 # Set in init()
 _transforms = []
 _serialize_transform = None
+_scrub_redact_transform = None
 
 _initialized = False
 
@@ -360,7 +363,7 @@ def init(access_token, environment='production', scrub_fields=None, url_fields=N
                  'staging', 'yourname'
     **kw: provided keyword arguments will override keys in SETTINGS.
     """
-    global SETTINGS, agent_log, _initialized, _transforms, _serialize_transform, _threads
+    global SETTINGS, agent_log, _initialized, _transforms, _serialize_transform, _scrub_redact_transform, _threads
 
     if scrub_fields is not None:
        SETTINGS['scrub_fields'] = list(scrub_fields)
@@ -403,6 +406,8 @@ def init(access_token, environment='production', scrub_fields=None, url_fields=N
     _serialize_transform = SerializableTransform(safe_repr=SETTINGS['locals']['safe_repr'],
                                                  safelist_types=SETTINGS['locals']['safelisted_types'])
 
+    _scrub_redact_transform = ScrubRedactTransform(suffixes=[(field,) for field in SETTINGS['scrub_fields']], redact_char='*')
+
     # A list of key prefixes to apply our shortener transform to. The request
     # being included in the body key is old behavior and is being retained for
     # backwards compatibility.
@@ -426,12 +431,20 @@ def init(access_token, environment='production', scrub_fields=None, url_fields=N
                                    keys=shortener_keys,
                                    **SETTINGS['locals']['sizes'])
     _transforms = [
-        shortener,
-        ScrubRedactTransform(),
-        _serialize_transform,
-        ScrubTransform(suffixes=[(field,) for field in SETTINGS['scrub_fields']], redact_char='*'),
-        ScrubUrlTransform(suffixes=[(field,) for field in SETTINGS['url_fields']], params_to_scrub=SETTINGS['scrub_fields'])
+        shortener,  # priority: 10
+        _scrub_redact_transform,  # priority: 20
+        _serialize_transform,  # priority: 30
+        ScrubUrlTransform(suffixes=[(field,) for field in SETTINGS['url_fields']],
+                          params_to_scrub=SETTINGS['scrub_fields'])  # priority: 50
     ]
+
+    # Add custom transforms
+    if len(SETTINGS['custom_transforms']) > 0:
+        _transforms.extend(SETTINGS['custom_transforms'])
+
+    # Sort the transforms by priority
+    _transforms = sorted(_transforms, key=lambda x: x.priority)
+
     _threads = queue.Queue()
     events.reset()
     filters.add_builtin_filters(SETTINGS)
@@ -507,7 +520,7 @@ def report_message(message, level='error', request=None, extra_data=None, payloa
     message: the string body of the message
     level: level to report at. One of: 'critical', 'error', 'warning', 'info', 'debug'
     request: the request object for the context of the message
-    extra_data: dictionary of params to include with the message. 'body' is reserved.
+    extra_data: optional, will be included in the 'custom' section of the payload
     payload_data: param names to pass in the 'data' level of the payload; overrides defaults.
     """
     try:
@@ -862,6 +875,7 @@ def _report_message(message, level, request, extra_data, payload_data):
     if extra_data:
         extra_data = extra_data
         data['body']['message'].update(extra_data)
+        data['custom'] = extra_data
 
     request = _get_actual_request(request)
     _add_request_data(data, request)
@@ -1065,7 +1079,7 @@ def _add_locals_data(trace_data, exc_info):
 def _serialize_frame_data(data):
     return transforms.transform(
         data,
-        [ScrubRedactTransform(), _serialize_transform],
+        [_scrub_redact_transform, _serialize_transform],
         batch_transforms=SETTINGS['batch_transforms']
     )
 
@@ -1264,11 +1278,12 @@ def _build_werkzeug_request_data(request):
         'files_keys': list(request.files.keys()),
     }
 
-    try:
-        if request.json:
-            request_data['body'] = request.json
-    except Exception:
-        pass
+    if SETTINGS['include_request_body']:
+        try:
+            if request.json:
+                request_data['body'] = request.json
+        except Exception:
+            pass
 
     return request_data
 
@@ -1296,13 +1311,15 @@ def _build_bottle_request_data(request):
         'GET': dict(request.query)
     }
 
-    if request.json:
-        try:
-            request_data['body'] = request.body.getvalue()
-        except:
-            pass
-    else:
-        request_data['POST'] = dict(request.forms)
+
+    if SETTINGS['include_request_body']:
+        if request.json:
+            try:
+                request_data['body'] = request.body.getvalue()
+            except:
+                pass
+        else:
+            request_data['POST'] = dict(request.forms)
 
     return request_data
 
@@ -1316,13 +1333,14 @@ def _build_sanic_request_data(request):
         'GET': dict(request.args)
     }
 
-    if request.json:
-        try:
-            request_data['body'] = request.json
-        except:
-            pass
-    else:
-        request_data['POST'] = request.form
+    if SETTINGS['include_request_body']:
+        if request.json:
+            try:
+                request_data['body'] = request.json
+            except:
+                pass
+        else:
+            request_data['POST'] = request.form
 
     return request_data
 
@@ -1353,16 +1371,17 @@ def _build_wsgi_request_data(request):
 
     request_data['headers'] = _extract_wsgi_headers(request.items())
 
-    try:
-        length = int(request.get('CONTENT_LENGTH', 0))
-    except ValueError:
-        length = 0
-    input = request.get('wsgi.input')
-    if length and input and hasattr(input, 'seek') and hasattr(input, 'tell'):
-        pos = input.tell()
-        input.seek(0, 0)
-        request_data['body'] = input.read(length)
-        input.seek(pos, 0)
+    if SETTINGS['include_request_body']:
+        try:
+            length = int(request.get('CONTENT_LENGTH', 0))
+        except ValueError:
+            length = 0
+        input = request.get('wsgi.input')
+        if length and input and hasattr(input, 'seek') and hasattr(input, 'tell'):
+            pos = input.tell()
+            input.seek(0, 0)
+            request_data['body'] = input.read(length)
+            input.seek(pos, 0)
 
     return request_data
 
@@ -1447,8 +1466,9 @@ def _build_server_data():
     Returns a dictionary containing information about the server environment.
     """
     # server environment
+    host = SETTINGS.get('host') or socket.gethostname()
     server_data = {
-        'host': socket.gethostname(),
+        'host': host,
         'pid': os.getpid()
     }
 

@@ -2,6 +2,30 @@
 
 The change log is also available on the [GitHub Releases Page](https://github.com/rollbar/pyrollbar/releases).
 
+**1.3.0**
+
+- Added support for classes to define the method `__rollbar_repr__` to control how objects are serialized by @danielmorell in [#479](https://github.com/rollbar/pyrollbar/pull/479)
+- Added support for Python 3.13 by @danielmorell in [#477](https://github.com/rollbar/pyrollbar/pull/477)
+- Removed support for Python 3.6 by @danielmorell in [#480](https://github.com/rollbar/pyrollbar/pull/480)
+- Updated framework versions tested against by @danielmorell in [#480](https://github.com/rollbar/pyrollbar/pull/480)
+
+**1.2.0**
+
+- Added support for custom payload transforms by @danielmorell in [#470](https://github.com/rollbar/pyrollbar/pull/470)
+- Added custom data to the message body by @waltjones in [#473](https://github.com/rollbar/pyrollbar/pull/473)
+- Added support for host override setting by @danielmorell in [#468](https://github.com/rollbar/pyrollbar/pull/468)
+- Fixed `RollbarHandler` reconfigures root logger by @ilkecan in [#463](https://github.com/rollbar/pyrollbar/pull/463)
+- Fixed `include_request_body` setting not checked for various frameworks by @danielmorell in [#469](https://github.com/rollbar/pyrollbar/pull/469)
+- Fixed `namedtuple` fields not being scrubbed by @danielmorell in [#474](https://github.com/rollbar/pyrollbar/pull/474)
+
+**1.1.2**
+
+Fixed build missing entrypoints for pyramid and cli in [#471](https://github.com/rollbar/pyrollbar/pull/471)
+
+**1.1.1**
+
+Fixed #465 httpx 0.28.0 not compatible with pyrollbar by @danielmorell in [#466](https://github.com/rollbar/pyrollbar/pull/466)
+
 **1.1.0**
 
 - Updated supported/tested frameworks and modernized tests and packaging by @danielmorell in [#455](https://github.com/rollbar/pyrollbar/pull/455)
